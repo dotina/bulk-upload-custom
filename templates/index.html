@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Alwayz Bulk Upload</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
+  h1 { margin-bottom: 0.5rem; }
+  .steps { display: flex; gap: 0.5rem; margin: 1.5rem 0 2rem; list-style: none; padding: 0; }
+  .steps li { flex: 1; text-align: center; padding: 0.5rem; border-bottom: 3px solid #ccc; color: #888; font-size: 0.85rem; }
+  .steps li.active { border-color: #1565c0; color: #1565c0; font-weight: 600; }
+  .steps li.done { border-color: #2e7d32; color: #2e7d32; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+  label { display: block; margin-top: 1rem; font-weight: 600; }
+  input[type="text"], input[type="password"], input[type="email"], input[type="file"], select { width: 100%; padding: 0.4rem; box-sizing: border-box; }
+  .format-options { margin-top: 0.5rem; }
+  .format-options label { display: inline; font-weight: 400; margin-right: 1.5rem; }
+  #espn-email-group { display: none; }
+  .btn-row { margin-top: 1.5rem; display: flex; gap: 0.75rem; flex-wrap: wrap; }
+  button { padding: 0.6rem 1.2rem; font-size: 1rem; cursor: pointer; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.primary { background: #1565c0; color: #fff; border: none; }
+  .status { margin-top: 1rem; font-style: italic; }
+  .error { color: #b00020; font-weight: 600; margin-top: 1rem; }
+  .summary-strip { display: flex; flex-wrap: wrap; gap: 1rem; margin: 1rem 0; padding: 0.75rem; background: #f5f5f5; border-radius: 4px; font-size: 0.9rem; }
+  .summary-strip .err { color: #b00020; font-weight: 600; }
+  .summary-strip .warn { color: #e65100; }
+  .site-card { border: 1px solid #ccc; border-radius: 4px; margin-bottom: 1rem; }
+  .site-header { padding: 0.75rem 1rem; background: #fafafa; border-bottom: 1px solid #eee; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+  .site-header:hover { background: #f0f0f0; }
+  .site-body { padding: 0.75rem 1rem; display: none; }
+  .site-card.open .site-body { display: block; }
+  .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 3px; font-size: 0.75rem; font-weight: 600; }
+  .badge-create { background: #e3f2fd; color: #1565c0; }
+  .badge-reuse { background: #e8f5e9; color: #2e7d32; }
+  .badge-skip { background: #f5f5f5; color: #616161; }
+  .badge-create_charger { background: #fff8e1; color: #f57f17; }
+  .site-fields { font-size: 0.85rem; color: #444; margin-bottom: 0.75rem; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  th, td { border: 1px solid #ddd; padding: 0.4rem; text-align: left; vertical-align: top; }
+  th { background: #fafafa; }
+  .row-errors { color: #b00020; font-size: 0.8rem; }
+  .row-warnings { color: #e65100; font-size: 0.8rem; }
+  .confirm-list { list-style: none; padding: 0; font-size: 1.05rem; line-height: 1.8; }
+  progress { width: 100%; height: 1.25rem; margin: 1rem 0; }
+  #results-table { margin-top: 1.5rem; }
+  .row-created { background: #e6f4ea; }
+  .row-skipped_existing { background: #f1f1f1; }
+  .row-failed { background: #fdecea; }
+  .payload-snippet { font-family: monospace; font-size: 0.75rem; max-width: 280px; word-break: break-all; }
+</style>
+</head>
+<body>
+<h1>Alwayz Site/Charger Bulk Upload</h1>
+<ol class="steps" id="step-indicator">
+  <li data-step="1" class="active">1. Configure</li>
+  <li data-step="2">2. Validation</li>
+  <li data-step="3">3. Confirmation</li>
+  <li data-step="4">4. Commit</li>
+</ol>
+
+<form id="upload-form">
+  <!-- Step 1: Configure -->
+  <div class="panel active" id="panel-1">
+    <fieldset>
+      <legend>Input format</legend>
+      <div class="format-options">
+        <label><input type="radio" name="format_type" value="canonical" checked> Canonical CSV/Excel</label>
+        <label><input type="radio" name="format_type" value="espn_ct"> ESPN CT workbook</label>
+      </div>
+    </fieldset>
+
+    <label for="file">File</label>
+    <input type="file" id="file" name="file" accept=".csv,.xlsx" required>
+
+    <div id="espn-email-group">
+      <label for="default_contact_email">Default contact email (ESPN export)</label>
+      <input type="email" id="default_contact_email" name="default_contact_email" placeholder="ops@example.com">
+    </div>
+
+    <label for="base_url">Base URL</label>
+    <input type="text" id="base_url" name="base_url" placeholder="https://api.dev.alwayz.us" required>
+
+    <label for="company_id">Company ID</label>
+    <input type="text" id="company_id" name="company_id" placeholder="company UUID" required>
+
+    <label for="token">Bearer Token</label>
+    <input type="password" id="token" name="token" autocomplete="off" required>
+
+    <div class="btn-row">
+      <button type="button" class="primary" id="validate-button">Validate data</button>
+    </div>
+  </div>
+
+  <!-- Step 2: Validation -->
+  <div class="panel" id="panel-2">
+    <div class="summary-strip" id="validation-summary"></div>
+    <div id="validation-sites"></div>
+    <div class="btn-row">
+      <button type="button" id="back-to-1">Back</button>
+      <button type="button" class="primary" id="continue-button" disabled>Continue</button>
+    </div>
+  </div>
+
+  <!-- Step 3: Confirmation -->
+  <div class="panel" id="panel-3">
+    <p>Review the summary below, then commit to create sites and chargers in Alwayz.</p>
+    <ul class="confirm-list" id="confirm-summary"></ul>
+    <div class="btn-row">
+      <button type="button" id="back-to-2">Back</button>
+      <button type="button" class="primary" id="commit-button">Commit upload</button>
+    </div>
+  </div>
+
+  <!-- Step 4: Commit -->
+  <div class="panel" id="panel-4">
+    <progress id="progress" value="0" max="100"></progress>
+    <div class="status" id="progress-label"></div>
+    <div class="error" id="error"></div>
+    <table id="results-table" style="display:none">
+      <thead>
+        <tr><th>Row</th><th>Site</th><th>Serial</th><th>Action</th><th>Site ID</th><th>Charger ID</th><th>Error</th></tr>
+      </thead>
+      <tbody id="results-body"></tbody>
+    </table>
+    <div class="status" id="summary"></div>
+    <div class="btn-row">
+      <button type="button" id="start-over-button" style="display:none">Start over</button>
+    </div>
+  </div>
+</form>
+
+<script>
+const form = document.getElementById("upload-form");
+const stepIndicator = document.getElementById("step-indicator");
+const espnEmailGroup = document.getElementById("espn-email-group");
+const validateButton = document.getElementById("validate-button");
+const continueButton = document.getElementById("continue-button");
+const commitButton = document.getElementById("commit-button");
+const validationSummary = document.getElementById("validation-summary");
+const validationSites = document.getElementById("validation-sites");
+const confirmSummary = document.getElementById("confirm-summary");
+const progressEl = document.getElementById("progress");
+const progressLabel = document.getElementById("progress-label");
+const errorEl = document.getElementById("error");
+const table = document.getElementById("results-table");
+const tbody = document.getElementById("results-body");
+const summaryEl = document.getElementById("summary");
+const startOverButton = document.getElementById("start-over-button");
+
+let currentStep = 1;
+let lastValidation = null;
+let processedCount = 0;
+let totalRows = 0;
+
+function getFormatType() {
+  return form.querySelector('input[name="format_type"]:checked').value;
+}
+
+function updateEspnEmailVisibility() {
+  const isEspn = getFormatType() === "espn_ct";
+  espnEmailGroup.style.display = isEspn ? "block" : "none";
+  document.getElementById("default_contact_email").required = isEspn;
+}
+
+form.querySelectorAll('input[name="format_type"]').forEach((radio) => {
+  radio.addEventListener("change", updateEspnEmailVisibility);
+});
+updateEspnEmailVisibility();
+
+function goToStep(step) {
+  currentStep = step;
+  document.querySelectorAll(".panel").forEach((panel) => panel.classList.remove("active"));
+  document.getElementById("panel-" + step).classList.add("active");
+  stepIndicator.querySelectorAll("li").forEach((li) => {
+    const n = parseInt(li.dataset.step, 10);
+    li.classList.remove("active", "done");
+    if (n === step) li.classList.add("active");
+    else if (n < step) li.classList.add("done");
+  });
+}
+
+function buildFormData() {
+  const formData = new FormData(form);
+  if (getFormatType() !== "espn_ct") {
+    formData.delete("default_contact_email");
+  }
+  return formData;
+}
+
+function actionBadge(action) {
+  const map = {
+    create: ["badge-create", "Create site"],
+    reuse_existing: ["badge-reuse", "Reuse existing site"],
+    create_site_and_charger: ["badge-create", "Create site + charger"],
+    reuse_site_create_charger: ["badge-create_charger", "Reuse site + create charger"],
+    skip_existing: ["badge-skip", "Skip (exists)"],
+  };
+  const [cls, label] = map[action] || ["badge-skip", action];
+  return `<span class="badge ${cls}">${label}</span>`;
+}
+
+function formatAddress(payload) {
+  const a = payload.address || {};
+  const parts = [a.streetAddress, a.city, a.state, a.zipCode, a.country].filter(Boolean);
+  return parts.join(", ") || "—";
+}
+
+function formatChargerSummary(payload) {
+  if (!payload) return "—";
+  const parts = [];
+  if (payload.chargerTypeId) parts.push("type: " + payload.chargerTypeId);
+  if (payload.connectorTypeId) parts.push("connector: " + payload.connectorTypeId);
+  if (payload.numberOfPorts) parts.push("ports: " + payload.numberOfPorts);
+  if (payload.model) parts.push("model: " + payload.model);
+  return parts.join("; ") || JSON.stringify(payload).slice(0, 120);
+}
+
+function renderValidation(report) {
+  const s = report.summary;
+  validationSummary.innerHTML = `
+    <span><strong>${s.total_sites}</strong> sites</span>
+    <span><strong>${s.total_chargers}</strong> chargers</span>
+    <span><strong>${s.new_sites}</strong> new sites</span>
+    <span><strong>${s.reused_sites}</strong> reused sites</span>
+    <span><strong>${s.chargers_to_create}</strong> to create</span>
+    <span><strong>${s.chargers_skipped}</strong> skipped</span>
+    ${s.errors ? `<span class="err"><strong>${s.errors}</strong> errors</span>` : ""}
+    ${s.warnings ? `<span class="warn"><strong>${s.warnings}</strong> warnings</span>` : ""}
+  `;
+  continueButton.disabled = !s.can_commit;
+
+  validationSites.innerHTML = "";
+  for (const site of report.sites) {
+    const card = document.createElement("div");
+    card.className = "site-card open";
+    const contact = (site.site_payload.contact || {}).email || "—";
+    const chargerRows = site.chargers.map((c) => {
+      const errHtml = c.errors.length ? `<div class="row-errors">${c.errors.join("; ")}</div>` : "";
+      const warnHtml = c.warnings.length ? `<div class="row-warnings">${c.warnings.join("; ")}</div>` : "";
+      const warranties = c.charger_payload && c.charger_payload.warrantiesAndAgreements
+        ? c.charger_payload.warrantiesAndAgreements.slice(0, 80) + "…"
+        : "";
+      return `<tr>
+        <td>${c.row_number}</td>
+        <td>${c.charger_name}</td>
+        <td>${c.serial_number}</td>
+        <td>${actionBadge(c.planned_action)}</td>
+        <td class="payload-snippet">${formatChargerSummary(c.charger_payload)}</td>
+        <td class="payload-snippet">${warranties}</td>
+        <td>${errHtml}${warnHtml}</td>
+      </tr>`;
+    }).join("");
+
+    const siteWarn = site.warnings.length
+      ? `<div class="row-warnings">${site.warnings.join("; ")}</div>` : "";
+
+    card.innerHTML = `
+      <div class="site-header">
+        <span><strong>${site.site_name}</strong> ${actionBadge(site.planned_action)}</span>
+        <span>${site.chargers.length} charger(s)</span>
+      </div>
+      <div class="site-body">
+        <div class="site-fields">
+          <div>Address: ${formatAddress(site.site_payload)}</div>
+          <div>Contact: ${contact}</div>
+          ${site.existing_site_id ? `<div>Existing site ID: ${site.existing_site_id}</div>` : ""}
+          ${siteWarn}
+        </div>
+        <table>
+          <thead>
+            <tr><th>Row</th><th>Name</th><th>Serial</th><th>Action</th><th>API payload</th><th>Warranties</th><th>Issues</th></tr>
+          </thead>
+          <tbody>${chargerRows}</tbody>
+        </table>
+      </div>`;
+    card.querySelector(".site-header").addEventListener("click", () => {
+      card.classList.toggle("open");
+    });
+    validationSites.appendChild(card);
+  }
+}
+
+function renderConfirmation(report) {
+  const s = report.summary;
+  confirmSummary.innerHTML = `
+    <li>Create <strong>${s.new_sites}</strong> new site(s)</li>
+    <li>Reuse <strong>${s.reused_sites}</strong> existing site(s)</li>
+    <li>Create <strong>${s.chargers_to_create}</strong> charger(s) (<strong>${s.chargers_skipped}</strong> skipped — already exist)</li>
+    <li><strong>${s.errors}</strong> error(s)</li>
+  `;
+}
+
+validateButton.addEventListener("click", async () => {
+  if (!form.reportValidity()) return;
+  validateButton.disabled = true;
+  validationSummary.textContent = "Validating…";
+  validationSites.innerHTML = "";
+  errorEl.textContent = "";
+
+  try {
+    const response = await fetch("/validate", { method: "POST", body: buildFormData() });
+    const data = await response.json();
+    if (!response.ok) {
+      errorEl.textContent = data.error || "Validation failed";
+      return;
+    }
+    lastValidation = data;
+    renderValidation(data);
+    goToStep(2);
+  } catch (err) {
+    errorEl.textContent = "Validation request failed: " + err.message;
+  } finally {
+    validateButton.disabled = false;
+  }
+});
+
+document.getElementById("back-to-1").addEventListener("click", () => goToStep(1));
+document.getElementById("back-to-2").addEventListener("click", () => goToStep(2));
+
+continueButton.addEventListener("click", () => {
+  if (!lastValidation) return;
+  renderConfirmation(lastValidation);
+  goToStep(3);
+});
+
+function addResultRow(row) {
+  const tr = document.createElement("tr");
+  tr.className = "row-" + row.action;
+  const warnHtml = (row.warnings && row.warnings.length)
+    ? `<div class="row-warnings">${row.warnings.join("; ")}</div>` : "";
+  const errHtml = row.error ? `<div class="row-errors">${row.error}</div>` : "";
+  tr.innerHTML = `<td>${row.row_number}</td><td>${row.site_name}</td><td>${row.serial_number || ""}</td>` +
+    `<td>${row.action}</td><td>${row.site_id || ""}</td><td>${row.charger_id || ""}</td><td>${errHtml}${warnHtml}</td>`;
+  tbody.appendChild(tr);
+}
+
+commitButton.addEventListener("click", async () => {
+  commitButton.disabled = true;
+  processedCount = 0;
+  totalRows = 0;
+  progressEl.value = 0;
+  progressEl.max = 100;
+  progressLabel.textContent = "Starting upload…";
+  errorEl.textContent = "";
+  summaryEl.textContent = "";
+  tbody.innerHTML = "";
+  table.style.display = "none";
+  startOverButton.style.display = "none";
+  goToStep(4);
+
+  try {
+    const response = await fetch("/run", { method: "POST", body: buildFormData() });
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let newlineIndex;
+      while ((newlineIndex = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0, newlineIndex);
+        buffer = buffer.slice(newlineIndex + 1);
+        if (!line) continue;
+        const parsed = JSON.parse(line);
+        if (parsed.type === "status") {
+          progressLabel.textContent = parsed.message;
+        } else if (parsed.type === "start") {
+          totalRows = parsed.total;
+          progressEl.max = totalRows || 1;
+          progressLabel.textContent = `Processing 0 of ${totalRows}…`;
+        } else if (parsed.type === "row") {
+          table.style.display = "table";
+          addResultRow(parsed);
+          processedCount += 1;
+          progressEl.value = processedCount;
+          progressLabel.textContent = `Processing ${processedCount} of ${totalRows}…`;
+        } else if (parsed.type === "done") {
+          progressLabel.textContent = "Complete.";
+          summaryEl.textContent = parsed.summary + " — report: " + parsed.report_path;
+          startOverButton.style.display = "inline-block";
+        } else if (parsed.type === "error") {
+          errorEl.textContent = parsed.message;
+          startOverButton.style.display = "inline-block";
+        }
+      }
+    }
+  } catch (err) {
+    errorEl.textContent = "Upload failed: " + err.message;
+    startOverButton.style.display = "inline-block";
+  } finally {
+    commitButton.disabled = false;
+  }
+});
+
+startOverButton.addEventListener("click", () => {
+  lastValidation = null;
+  validationSummary.innerHTML = "";
+  validationSites.innerHTML = "";
+  confirmSummary.innerHTML = "";
+  tbody.innerHTML = "";
+  table.style.display = "none";
+  summaryEl.textContent = "";
+  errorEl.textContent = "";
+  progressEl.value = 0;
+  goToStep(1);
+});
+</script>
+</body>
+</html>
