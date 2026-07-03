@@ -1,7 +1,6 @@
 # Alwayz Site/Charger Bulk Upload
 
 Bulk-creates Sites and Chargers in the Alwayz API from a canonical CSV/Excel file.
-Design doc: `dev/alwayz-backend/docs/superpowers/specs/2026-07-01-site-charger-bulk-upload-script-design.md`.
 
 ## Setup
 
